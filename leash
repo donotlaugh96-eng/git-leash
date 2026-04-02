@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-LEASH_VERSION="0.1.0"
+LEASH_VERSION="0.1.1"
 
 # --- Config Parser -----------------------------------------------------------
 # Parses INI-style config with named sections and multi-value keys.
@@ -623,33 +623,36 @@ cmd_status() {
             local sp="schedule.${sn}."
             local days start end tz
             days="$(cfg "${sp}days" "mon,tue,wed,thu,fri")"
-            start="$(cfg "${sp}start" "?")"
-            end="$(cfg "${sp}end" "?")"
+            start="$(cfg "${sp}start" "")"
+            end="$(cfg "${sp}end" "")"
             tz="$(cfg "${sp}timezone" "local")"
 
             # check if currently active
             local active="  "
-            local current_day current_time_str
-            if [[ "$tz" == "local" ]]; then
-                current_day="$(date +%a)"
-                current_time_str="$(date +%H:%M)"
-            else
-                current_day="$(TZ="$tz" date +%a)"
-                current_time_str="$(TZ="$tz" date +%H:%M)"
-            fi
-            current_day="${current_day,,}"
+            if [[ -n "$start" && -n "$end" ]]; then
+                local current_day current_time_str
+                if [[ "$tz" == "local" ]]; then
+                    current_day="$(date +%a)"
+                    current_time_str="$(date +%H:%M)"
+                else
+                    current_day="$(TZ="$tz" date +%a)"
+                    current_time_str="$(TZ="$tz" date +%H:%M)"
+                fi
+                current_day="${current_day,,}"
 
-            if day_matches "$days" "$current_day"; then
-                local start_min end_min now_min
-                start_min="$(time_to_minutes "$start")"
-                end_min="$(time_to_minutes "$end")"
-                now_min="$(time_to_minutes "$current_time_str")"
-                if is_in_time_window "$start_min" "$end_min" "$now_min"; then
-                    active="▶ "
+                if day_matches "$days" "$current_day"; then
+                    local start_min end_min now_min
+                    start_min="$(time_to_minutes "$start")"
+                    end_min="$(time_to_minutes "$end")"
+                    now_min="$(time_to_minutes "$current_time_str")"
+                    if is_in_time_window "$start_min" "$end_min" "$now_min"; then
+                        active="▶ "
+                    fi
                 fi
             fi
 
-            echo "  ${active}schedule \"${sn}\": ${days} ${start}–${end} (${tz})"
+            local time_range="${start:-??:??}–${end:-??:??}"
+            echo "  ${active}schedule \"${sn}\": ${days} ${time_range} (${tz})"
 
             # show allow/block rules
             local allow_count block_count

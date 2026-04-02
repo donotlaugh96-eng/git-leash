@@ -54,7 +54,7 @@ task=go to sleep you disaster
 
 [task]
 # global fallback when a schedule doesn't have its own
-current=you're supposed to be doing something else
+current=stop getting distracted
 
 [messages]
 tone=puppy
@@ -121,7 +121,7 @@ task=go to sleep you disaster
 
 [task]
 # fallback when a schedule doesn't have its own
-current=you're supposed to be doing something else
+current=stop getting distracted
 ```
 
 Set the global task from the CLI:
