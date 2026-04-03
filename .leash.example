@@ -49,18 +49,30 @@ task=finish the auth refactor
 [task]
 current=puppy should be working right now
 
-# --- Messages (optional) -----------------------------------------------------
+# --- Defaults (optional) ------------------------------------------------------
 
-[messages]
-# tone=default    # normal focus-helper vibes
-tone=puppy        # i know what you are
+[defaults]
+tone=puppy              # comma-separated: puppy,wolf,cat,bunny,fox,robot
+noun=girl,puppy         # {noun} in messages. per-tone default if unset
+
+# --- Tone overrides (optional) ------------------------------------------------
+# bark= lines are additive. Unknown names create fully custom tones.
+
+#[tone "puppy"]
+#noun=puppy,enby
+#bark=*zooms in circles* NO COMMIT!! FOCUS!!
+
+#[tone "dragon"]
+#noun=wyrm,hoarder
+#emoji=🐉
+#bark=*breathes fire* no commits, {noun}!!
 
 # --- Another schedule example ------------------------------------------------
 #[schedule "go-to-bed"]
 #days=mon,tue,wed,thu,sun
 #start=23:00
 #end=06:00
-# overnight windows work too — this blocks 11pm to 6am
+#task=go to sleep you disaster
 
 # --- Override (optional) ------------------------------------------------------
 # Configure escape hatches. Defaults shown below.
