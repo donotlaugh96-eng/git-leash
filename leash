@@ -470,11 +470,17 @@ init_builtin_tones() {
 # --- Tone Resolution ----------------------------------------------------------
 
 # Pick a random element from a comma-separated string
+# Uses /dev/urandom instead of $RANDOM for better distribution
+# ($RANDOM seeds from PID — sequential hook invocations get correlated values)
 pick_random() {
     local IFS=','
     local -a items
     read -ra items <<< "$1"
-    echo "${items[$((RANDOM % ${#items[@]}))]}"
+    local count=${#items[@]}
+    (( count == 1 )) && { echo "${items[0]}"; return; }
+    local rand
+    rand=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % count ))
+    echo "${items[$rand]}"
 }
 
 # Resolve a tone field with fallback chain:
@@ -533,7 +539,10 @@ get_tone_barks() {
         return
     fi
 
-    local bark="${all_barks[$((RANDOM % ${#all_barks[@]}))]}"
+    local bark_count=${#all_barks[@]}
+    local bark_idx
+    bark_idx=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % bark_count ))
+    local bark="${all_barks[$bark_idx]}"
     echo "${bark//\{noun\}/$noun}"
 }
 
