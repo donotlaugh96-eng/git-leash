@@ -7,17 +7,18 @@
 
 set -euo pipefail
 
-LEASH_VERSION="0.1.1"
+LEASH_VERSION="0.1.2"
 
 # --- Config Parser -----------------------------------------------------------
 # Parses INI-style config with named sections and multi-value keys.
-# Supports: [schedule "name"], [task], [override], [messages]
+# Supports: [schedule "name"], [tone "name"], [defaults], [task], [override]
 
 # Parse a config file into a flat key-value store.
 # Section headers become prefixes: schedule.work-focus.start=09:00
 # Multi-value keys (allow, block) get numbered: schedule.work-focus.allow.0=remote:foo
 declare -A CONFIG
 declare -a SCHEDULE_NAMES=()
+declare -a TONE_NAMES=()
 
 parse_config_file() {
     local file="$1"
@@ -47,6 +48,13 @@ parse_config_file() {
                     [[ "$sn" == "$current_name" ]] && found=1 && break
                 done
                 [[ $found -eq 0 ]] && SCHEDULE_NAMES+=("$current_name")
+            elif [[ "$current_section" == "tone" ]]; then
+                # track tone names (avoid duplicates on merge)
+                local found=0
+                for tn in "${TONE_NAMES[@]:-}"; do
+                    [[ "$tn" == "$current_name" ]] && found=1 && break
+                done
+                [[ $found -eq 0 ]] && TONE_NAMES+=("$current_name")
             fi
             continue
         fi
@@ -67,8 +75,8 @@ parse_config_file() {
             value="${value#"${value%%[![:space:]]*}"}"
             value="${value%"${value##*[![:space:]]}"}"
 
-            # multi-value keys: allow, block
-            if [[ "$key" == "allow" || "$key" == "block" ]]; then
+            # multi-value keys: allow, block, bark
+            if [[ "$key" == "allow" || "$key" == "block" || "$key" == "bark" ]]; then
                 local count_key="${prefix}${key}._count"
                 local count="${multicount[$count_key]:-${CONFIG[$count_key]:-0}}"
                 CONFIG["${prefix}${key}.${count}"]="$value"
@@ -93,6 +101,7 @@ cfg() {
 load_config() {
     CONFIG=()
     SCHEDULE_NAMES=()
+    TONE_NAMES=()
     # global
     parse_config_file "${HOME}/.leash"
     # project-local (overrides global for same keys)
@@ -100,6 +109,52 @@ load_config() {
     git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
     if [[ -n "$git_root" && -f "${git_root}/.leash" ]]; then
         parse_config_file "${git_root}/.leash"
+    fi
+
+    # migrate deprecated [messages] → [defaults]
+    migrate_messages_to_defaults
+}
+
+# Handle [messages] → [defaults] deprecation
+migrate_messages_to_defaults() {
+    local has_messages=0
+    # check for any messages.* keys
+    for key in "${!CONFIG[@]}"; do
+        if [[ "$key" == messages.* ]]; then
+            has_messages=1
+            break
+        fi
+    done
+    (( has_messages == 0 )) && return 0
+
+    local suppress
+    suppress="$(cfg "defaults.suppress_warnings" "$(cfg "messages.suppress_warnings" "false")")"
+
+    if [[ "$suppress" != "true" ]]; then
+        echo "  🐾 leash: [messages] is deprecated, use [defaults] instead" >&2
+        echo "     tone= and noun= now go in [defaults]. see: leash example" >&2
+        echo "     set suppress_warnings=true in [defaults] to silence this" >&2
+    fi
+
+    # migrate: messages.tone → defaults.tone (if defaults.tone not already set)
+    local msg_tone
+    msg_tone="$(cfg "messages.tone" "")"
+    if [[ -n "$msg_tone" && -z "$(cfg "defaults.tone" "")" ]]; then
+        CONFIG["defaults.tone"]="$msg_tone"
+    fi
+
+    # migrate: messages.noun → defaults.noun
+    local msg_noun
+    msg_noun="$(cfg "messages.noun" "")"
+    if [[ -n "$msg_noun" && -z "$(cfg "defaults.noun" "")" ]]; then
+        CONFIG["defaults.noun"]="$msg_noun"
+    fi
+
+    # migrate: messages.suppress_warnings → defaults.suppress_warnings
+    local msg_suppress
+    msg_suppress="$(cfg "messages.suppress_warnings" "")"
+    if [[ -n "$msg_suppress" && -z "$(cfg "defaults.suppress_warnings" "")" ]]; then
+        CONFIG["defaults.suppress_warnings"]="$msg_suppress"
     fi
 }
 
@@ -230,11 +285,11 @@ repo_matches_any() {
 leash_warn_allow_block() {
     local schedule_name="$1"
     local suppress
-    suppress="$(cfg "messages.suppress_warnings" "false")"
+    suppress="$(cfg "defaults.suppress_warnings" "false")"
     [[ "$suppress" == "true" ]] && return 0
     echo "  🐾 leash: warning: schedule \"${schedule_name}\" has both allow= and block= lines" >&2
     echo "     block= lines are ignored when allow= is present" >&2
-    echo "     set suppress_warnings=true in [messages] to silence this" >&2
+    echo "     set suppress_warnings=true in [defaults] to silence this" >&2
 }
 
 # --- Core Check Logic ---------------------------------------------------------
@@ -312,11 +367,190 @@ check_should_block() {
     return 1
 }
 
-# --- Messages -----------------------------------------------------------------
+# --- Tone Defaults ------------------------------------------------------------
+# Built-in tone data. User config adds to / overrides these.
 
-msg_default() {
-    local task env_var slip_file
-    task="$BLOCK_TASK"
+declare -A BUILTIN_TONE
+
+init_builtin_tones() {
+    # --- puppy ---
+    BUILTIN_TONE[puppy.emoji]="🐾"
+    BUILTIN_TONE[puppy.noun]="puppy,girl"
+    BUILTIN_TONE[puppy.task_line]="be a good {noun} and work on: {task} 🐶"
+    BUILTIN_TONE[puppy.env_label]="slip the leash:"
+    BUILTIN_TONE[puppy.slip_label]="one-time walkies:"
+    BUILTIN_TONE[puppy.nuclear_label]="...or --no-verify, but that's cheating and you know it"
+    BUILTIN_TONE[puppy.bark._count]=8
+    BUILTIN_TONE[puppy.bark.0]="arf arf! bad {noun}!! no commits during focus time!!"
+    BUILTIN_TONE[puppy.bark.1]="woof! hey! you're not supposed to be doing that!!"
+    BUILTIN_TONE[puppy.bark.2]="bork bork! paws OFF the commit button!!"
+    BUILTIN_TONE[puppy.bark.3]="*tugs leash* nuh uh!! it's focus time!!"
+    BUILTIN_TONE[puppy.bark.4]="*whimper* you promised you'd focus this time..."
+    BUILTIN_TONE[puppy.bark.5]="WOOF! sit! stay! no commit!"
+    BUILTIN_TONE[puppy.bark.6]="*pulls you back by the collar* not so fast!!"
+    BUILTIN_TONE[puppy.bark.7]="arf! you silly {noun}, it's not commit time yet!"
+
+    # --- wolf ---
+    BUILTIN_TONE[wolf.emoji]="🐺"
+    BUILTIN_TONE[wolf.noun]="wolf,puppy"
+    BUILTIN_TONE[wolf.task_line]="your task, {noun}: {task}"
+    BUILTIN_TONE[wolf.env_label]="break free:"
+    BUILTIN_TONE[wolf.slip_label]="one-time howl:"
+    BUILTIN_TONE[wolf.nuclear_label]="go lone wolf:"
+    BUILTIN_TONE[wolf.bark._count]=6
+    BUILTIN_TONE[wolf.bark.0]="*growl* ...you know better than this, {noun}."
+    BUILTIN_TONE[wolf.bark.1]="the pack doesn't commit during focus time."
+    BUILTIN_TONE[wolf.bark.2]="*bares teeth* step away from the keyboard."
+    BUILTIN_TONE[wolf.bark.3]="*low growl* not now. you have work to do."
+    BUILTIN_TONE[wolf.bark.4]="*pins you down* no. focus."
+    BUILTIN_TONE[wolf.bark.5]="you're not going anywhere, {noun}. back to work."
+
+    # --- cat ---
+    BUILTIN_TONE[cat.emoji]="🐱"
+    BUILTIN_TONE[cat.noun]="kitten,kitty"
+    BUILTIN_TONE[cat.task_line]="{noun}, you should be working on: {task}"
+    BUILTIN_TONE[cat.env_label]="earn your freedom:"
+    BUILTIN_TONE[cat.slip_label]="one treat:"
+    BUILTIN_TONE[cat.nuclear_label]="knock it off the table:"
+    BUILTIN_TONE[cat.bark._count]=7
+    BUILTIN_TONE[cat.bark.0]="*knocks your commit off the table*"
+    BUILTIN_TONE[cat.bark.1]="*stares at you judgmentally* ...no."
+    BUILTIN_TONE[cat.bark.2]="mrrp. no commits right now, {noun}."
+    BUILTIN_TONE[cat.bark.3]="*sits on your keyboard* you're not doing that."
+    BUILTIN_TONE[cat.bark.4]="*slow blink* ...did I say you could commit?"
+    BUILTIN_TONE[cat.bark.5]="hssss!! it's focus time!!"
+    BUILTIN_TONE[cat.bark.6]="*pushes your laptop closed*"
+
+    # --- bunny ---
+    BUILTIN_TONE[bunny.emoji]="🐰"
+    BUILTIN_TONE[bunny.noun]="bunny"
+    BUILTIN_TONE[bunny.task_line]="please work on: {task} 🥺"
+    BUILTIN_TONE[bunny.env_label]="hop away:"
+    BUILTIN_TONE[bunny.slip_label]="one carrot:"
+    BUILTIN_TONE[bunny.nuclear_label]="...i can't stop you:"
+    BUILTIN_TONE[bunny.bark._count]=6
+    BUILTIN_TONE[bunny.bark.0]="*nose twitch* u-um... it's focus time, {noun}..."
+    BUILTIN_TONE[bunny.bark.1]="*hides behind monitor* p-please don't commit right now..."
+    BUILTIN_TONE[bunny.bark.2]="*thump thump* no!! focus time!!"
+    BUILTIN_TONE[bunny.bark.3]="*soft ears droop* you said you'd focus..."
+    BUILTIN_TONE[bunny.bark.4]="*tugs your sleeve gently* not yet..."
+    BUILTIN_TONE[bunny.bark.5]="eep! {noun}! it's not commit time!"
+
+    # --- fox ---
+    BUILTIN_TONE[fox.emoji]="🦊"
+    BUILTIN_TONE[fox.noun]="fox"
+    BUILTIN_TONE[fox.task_line]="be clever and work on: {task}"
+    BUILTIN_TONE[fox.env_label]="outsmart the fox:"
+    BUILTIN_TONE[fox.slip_label]="one-time trick:"
+    BUILTIN_TONE[fox.nuclear_label]="just cheat (boring):"
+    BUILTIN_TONE[fox.bark._count]=6
+    BUILTIN_TONE[fox.bark.0]="*tilts head* oh? committing during focus time, {noun}?"
+    BUILTIN_TONE[fox.bark.1]="heh. nice try~ but it's focus time."
+    BUILTIN_TONE[fox.bark.2]="*flicks tail* nah. not right now."
+    BUILTIN_TONE[fox.bark.3]="what does the fox say? ...no commits, {noun}."
+    BUILTIN_TONE[fox.bark.4]="*curls around your keyboard* this is mine now."
+    BUILTIN_TONE[fox.bark.5]="clever {noun}~ but not clever enough to commit right now."
+
+    # --- robot ---
+    BUILTIN_TONE[robot.emoji]="🤖"
+    BUILTIN_TONE[robot.noun]="user"
+    BUILTIN_TONE[robot.task_line]="DESIGNATED TASK: {task}"
+    BUILTIN_TONE[robot.env_label]="OVERRIDE CODE:"
+    BUILTIN_TONE[robot.slip_label]="SINGLE-USE PASS:"
+    BUILTIN_TONE[robot.nuclear_label]="BYPASS ALL SAFETY:"
+    BUILTIN_TONE[robot.bark._count]=6
+    BUILTIN_TONE[robot.bark.0]="COMMIT REJECTED. FOCUS PROTOCOL ACTIVE."
+    BUILTIN_TONE[robot.bark.1]="ERROR: unauthorized commit during focus window."
+    BUILTIN_TONE[robot.bark.2]="ALERT: {noun} attempted commit outside permitted hours."
+    BUILTIN_TONE[robot.bark.3]="NEGATIVE. PRODUCTIVITY SUBROUTINE ENGAGED."
+    BUILTIN_TONE[robot.bark.4]="ACCESS DENIED. RETURN TO DESIGNATED TASK."
+    BUILTIN_TONE[robot.bark.5]="BEEP. no. focus mode is active, {noun}."
+}
+
+# --- Tone Resolution ----------------------------------------------------------
+
+# Pick a random element from a comma-separated string
+# Uses /dev/urandom instead of $RANDOM for better distribution
+# ($RANDOM seeds from PID — sequential hook invocations get correlated values)
+pick_random() {
+    local IFS=','
+    local -a items
+    read -ra items <<< "$1"
+    local count=${#items[@]}
+    (( count == 1 )) && { echo "${items[0]}"; return; }
+    local rand
+    rand=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % count ))
+    echo "${items[$rand]}"
+}
+
+# Resolve a tone field with fallback chain:
+#   [tone "x"] → [defaults] → builtin → hardcoded fallback
+tone_cfg() {
+    local tone="$1"
+    local field="$2"
+    local fallback="${3:-}"
+
+    local val
+    # 1. [tone "x"] in config
+    val="$(cfg "tone.${tone}.${field}" "")"
+    [[ -n "$val" ]] && { echo "$val"; return; }
+
+    # 2. [defaults] in config
+    val="$(cfg "defaults.${field}" "")"
+    [[ -n "$val" ]] && { echo "$val"; return; }
+
+    # 3. builtin tone defaults
+    val="${BUILTIN_TONE[${tone}.${field}]:-}"
+    [[ -n "$val" ]] && { echo "$val"; return; }
+
+    # 4. hardcoded fallback
+    echo "$fallback"
+}
+
+# Collect all barks for a tone: builtin + user [tone "x"] + user [defaults]
+get_tone_barks() {
+    local tone="$1"
+    local noun="$2"
+    local -a all_barks=()
+
+    # builtin barks
+    local builtin_count="${BUILTIN_TONE[${tone}.bark._count]:-0}"
+    local i
+    for (( i = 0; i < builtin_count; i++ )); do
+        all_barks+=("${BUILTIN_TONE[${tone}.bark.${i}]}")
+    done
+
+    # user barks from [tone "x"]
+    local user_count
+    user_count="$(cfg "tone.${tone}.bark._count" "0")"
+    for (( i = 0; i < user_count; i++ )); do
+        all_barks+=("$(cfg "tone.${tone}.bark.${i}" "")")
+    done
+
+    # user barks from [defaults] (apply to all tones)
+    local default_count
+    default_count="$(cfg "defaults.bark._count" "0")"
+    for (( i = 0; i < default_count; i++ )); do
+        all_barks+=("$(cfg "defaults.bark.${i}" "")")
+    done
+
+    if (( ${#all_barks[@]} == 0 )); then
+        echo "focus time is active."
+        return
+    fi
+
+    local bark_count=${#all_barks[@]}
+    local bark_idx
+    bark_idx=$(( $(od -An -tu4 -N4 /dev/urandom | tr -d ' ') % bark_count ))
+    local bark="${all_barks[$bark_idx]}"
+    echo "${bark//\{noun\}/$noun}"
+}
+
+# --- Message Rendering --------------------------------------------------------
+
+# plain default tone — no personality
+msg_default_tone() {
+    local env_var slip_file
     env_var="$(cfg "override.env_var" "UNLEASH")"
     slip_file="$(cfg "override.slip_file" ".leash-slip")"
 
@@ -324,57 +558,69 @@ msg_default() {
     echo "  🐾 leash: focus time is active — schedule \"${BLOCK_SCHEDULE_NAME}\""
     echo "     ${BLOCK_DAYS} ${BLOCK_START}–${BLOCK_END} (${BLOCK_TZ})"
     echo ""
-    if [[ -n "$task" ]]; then
-        echo "     you should be working on: ${task}"
+    if [[ -n "$BLOCK_TASK" ]]; then
+        echo "     you should be working on: ${BLOCK_TASK}"
         echo ""
     fi
-    echo "     override:  ${env_var}=1 git commit ..."
-    echo "     one-time:  touch ${slip_file}"
-    echo "     nuclear:   git commit --no-verify"
-    echo ""
-}
-
-msg_puppy() {
-    local task env_var slip_file
-    task="$BLOCK_TASK"
-    env_var="$(cfg "override.env_var" "UNLEASH")"
-    slip_file="$(cfg "override.slip_file" ".leash-slip")"
-
-    # randomize bark
-    local -a barks=(
-        "arf arf! bad puppy!! no commits during focus time!!"
-        "woof! hey! you're not supposed to be doing that!!"
-        "bork bork! paws OFF the commit button!!"
-        "*tugs leash* nuh uh!! it's focus time!!"
-        "*whimper* you promised you'd focus this time..."
-        "WOOF! sit! stay! no commit!"
-        "*pulls you back by the collar* not so fast!!"
-        "arf! you silly puppy, it's not commit time yet!"
-    )
-    local bark="${barks[$((RANDOM % ${#barks[@]}))]}"
-
-    echo ""
-    echo "  🐾 ${bark}"
-    echo "     schedule \"${BLOCK_SCHEDULE_NAME}\" is active"
-    echo "     ${BLOCK_DAYS} ${BLOCK_START}–${BLOCK_END} (${BLOCK_TZ})"
-    echo ""
-    if [[ -n "$task" ]]; then
-        echo "     be a good girl and work on: ${task} 🐶"
-        echo ""
-    fi
-    echo "     slip the leash:        ${env_var}=1 git commit ..."
-    echo "     one-time walkies pass:  touch ${slip_file}"
-    echo "     ...or --no-verify, but that's cheating and you know it"
+    printf "     %-20s %s=1 git commit ...\n" "override:" "$env_var"
+    printf "     %-20s leash slip (or touch %s)\n" "one-time:" "$slip_file"
+    printf "     %-20s git commit --no-verify\n" "nuclear:"
     echo ""
 }
 
 show_block_message() {
-    local tone
-    tone="$(cfg "messages.tone" "default")"
-    case "$tone" in
-        puppy) msg_puppy ;;
-        *)     msg_default ;;
-    esac
+    init_builtin_tones
+
+    # pick a tone
+    local tone_str tone
+    tone_str="$(tone_cfg default tone "default")"
+    tone="$(pick_random "$tone_str")"
+
+    if [[ "$tone" == "default" ]]; then
+        msg_default_tone
+        return
+    fi
+
+    # resolve fields
+    local noun emoji task_line env_label slip_label nuclear_label
+    noun="$(pick_random "$(tone_cfg "$tone" noun "one")")"
+    emoji="$(tone_cfg "$tone" emoji "🐾")"
+    task_line="$(tone_cfg "$tone" task_line "you should be working on: {task}")"
+    env_label="$(tone_cfg "$tone" env_label "override:")"
+    slip_label="$(tone_cfg "$tone" slip_label "one-time:")"
+    nuclear_label="$(tone_cfg "$tone" nuclear_label "nuclear:")"
+
+    # get a bark with {noun} substituted
+    local bark
+    bark="$(get_tone_barks "$tone" "$noun")"
+
+    # substitute {noun} and {task} in task_line
+    task_line="${task_line//\{noun\}/$noun}"
+    task_line="${task_line//\{task\}/$BLOCK_TASK}"
+
+    # render
+    local env_var slip_file
+    env_var="$(cfg "override.env_var" "UNLEASH")"
+    slip_file="$(cfg "override.slip_file" ".leash-slip")"
+
+    echo ""
+    echo "  ${emoji} ${bark}"
+    echo "     schedule \"${BLOCK_SCHEDULE_NAME}\" is active"
+    echo "     ${BLOCK_DAYS} ${BLOCK_START}–${BLOCK_END} (${BLOCK_TZ})"
+    echo ""
+    if [[ -n "$BLOCK_TASK" ]]; then
+        echo "     ${task_line}"
+        echo ""
+    fi
+    printf "     %-20s %s=1 git commit ...\n" "$env_label" "$env_var"
+    printf "     %-20s leash slip (or touch %s)\n" "$slip_label" "$slip_file"
+    # if nuclear label is short, use it as a prefix; if long, it's standalone
+    if (( ${#nuclear_label} <= 20 )); then
+        printf "     %-20s git commit --no-verify\n" "$nuclear_label"
+    else
+        echo "     ${nuclear_label}"
+    fi
+    echo ""
 }
 
 # --- Hook Check (called by pre-commit hook) -----------------------------------
@@ -439,14 +685,16 @@ else
 fi
 __leash_exit=\$?
 
+# if leash blocked, fail fast — don't run backup hook
+(( __leash_exit != 0 )) && exit \$__leash_exit
+
 # chain: run existing pre-commit hook if it was backed up
 if [[ -x "\$(dirname "\$0")/pre-commit.leash-backup" ]]; then
     "\$(dirname "\$0")/pre-commit.leash-backup" "\$@"
-    __chain_exit=\$?
-    (( __leash_exit != 0 || __chain_exit != 0 )) && exit 1
+    exit \$?
 fi
 
-exit \$__leash_exit
+exit 0
 HOOK_EOF
 }
 
@@ -467,7 +715,20 @@ cmd_install() {
 
     if (( global )); then
         local hooks_dir="${HOME}/.leash-hooks"
+        local prev_hooks_path
+        prev_hooks_path="$(git config --global core.hooksPath 2>/dev/null || true)"
+
+        # save previous hooksPath for restore on uninstall
+        local state_file="${HOME}/.leash-hooks/.prev-hooks-path"
         mkdir -p "$hooks_dir"
+
+        if [[ -n "$prev_hooks_path" && "$prev_hooks_path" != "$hooks_dir" ]]; then
+            echo "$prev_hooks_path" > "$state_file"
+            echo "  saved previous core.hooksPath: ${prev_hooks_path}"
+        else
+            rm -f "$state_file"
+        fi
+
         generate_hook "$self_path" > "${hooks_dir}/pre-commit"
         chmod +x "${hooks_dir}/pre-commit"
         git config --global core.hooksPath "$hooks_dir"
@@ -487,7 +748,12 @@ cmd_install() {
         return 1
     fi
 
-    local hooks_dir="${git_root}/.git/hooks"
+    # resolve hooks directory (handles worktrees, custom git-dir, etc.)
+    local hooks_dir
+    hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null)"
+    if [[ -z "$hooks_dir" ]]; then
+        hooks_dir="${git_root}/.git/hooks"
+    fi
     mkdir -p "$hooks_dir"
 
     # backup existing pre-commit hook
@@ -503,7 +769,11 @@ cmd_install() {
     chmod +x "${hooks_dir}/pre-commit"
 
     # stealth: add .leash and .leash-slip to .git/info/exclude
-    local exclude_file="${git_root}/.git/info/exclude"
+    local exclude_file
+    exclude_file="$(git rev-parse --git-path info/exclude 2>/dev/null)"
+    if [[ -z "$exclude_file" ]]; then
+        exclude_file="${git_root}/.git/info/exclude"
+    fi
     mkdir -p "$(dirname "$exclude_file")"
     touch "$exclude_file"
     for pattern in ".leash" ".leash-slip"; do
@@ -513,7 +783,7 @@ cmd_install() {
     done
 
     echo "  🐾 leash: installed to ${git_root}"
-    echo "     hook: .git/hooks/pre-commit"
+    echo "     hook: ${hooks_dir}/pre-commit"
     echo "     .leash and .leash-slip added to .git/info/exclude (stealth mode)"
     echo ""
     echo "  tip: create .leash with your schedule (see leash example)"
@@ -542,8 +812,24 @@ cmd_uninstall() {
 
     if (( global )); then
         local hooks_dir="${HOME}/.leash-hooks"
+        local state_file="${hooks_dir}/.prev-hooks-path"
         rm -f "${hooks_dir}/pre-commit"
-        git config --global --unset core.hooksPath 2>/dev/null || true
+
+        # restore previous hooksPath if we saved one
+        if [[ -f "$state_file" ]]; then
+            local prev_path
+            prev_path="$(cat "$state_file")"
+            rm -f "$state_file"
+            if [[ -n "$prev_path" ]]; then
+                git config --global core.hooksPath "$prev_path"
+                echo "  restored previous core.hooksPath: ${prev_path}"
+            else
+                git config --global --unset core.hooksPath 2>/dev/null || true
+            fi
+        else
+            git config --global --unset core.hooksPath 2>/dev/null || true
+        fi
+
         echo "  🐾 leash: uninstalled globally"
         return 0
     fi
@@ -555,7 +841,11 @@ cmd_uninstall() {
         return 1
     fi
 
-    local hooks_dir="${git_root}/.git/hooks"
+    local hooks_dir
+    hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null)"
+    if [[ -z "$hooks_dir" ]]; then
+        hooks_dir="${git_root}/.git/hooks"
+    fi
 
     if [[ -f "${hooks_dir}/pre-commit" ]] && grep -q "git-leash" "${hooks_dir}/pre-commit" 2>/dev/null; then
         rm -f "${hooks_dir}/pre-commit"
@@ -593,6 +883,7 @@ cmd_slip() {
 
 cmd_status() {
     load_config
+    init_builtin_tones
 
     local git_root
     git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -679,9 +970,11 @@ cmd_status() {
     fi
 
     # tone
-    local tone
-    tone="$(cfg "messages.tone" "default")"
-    echo "  message tone: ${tone}"
+    local tone noun
+    tone="$(tone_cfg default tone "default")"
+    noun="$(cfg "defaults.noun" "(per-tone defaults)")"
+    echo "  tone:         ${tone}"
+    echo "  noun:         ${noun}"
 
     # override config
     local env_var slip_file
@@ -738,12 +1031,33 @@ cmd_task() {
 
     # update or add [task] section
     if [[ -f "$config_file" ]] && grep -q '^\[task\]' "$config_file" 2>/dev/null; then
-        # replace existing current= line
-        if grep -q '^current=' "$config_file" 2>/dev/null; then
-            sed -i "s|^current=.*|current=${new_task}|" "$config_file"
-        else
-            sed -i "/^\[task\]/a current=${new_task}" "$config_file"
+        # rewrite file, replacing current= in [task] section (pure bash, no sed)
+        local in_task=0 replaced=0 tmpfile
+        tmpfile="$(mktemp)"
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^\[task\]$ ]]; then
+                in_task=1
+                echo "$line" >> "$tmpfile"
+            elif [[ "$line" =~ ^\[.*\]$ ]]; then
+                # entering a new section — if we were in [task] and never replaced, add it
+                if (( in_task && !replaced )); then
+                    echo "current=${new_task}" >> "$tmpfile"
+                    replaced=1
+                fi
+                in_task=0
+                echo "$line" >> "$tmpfile"
+            elif (( in_task )) && [[ "$line" =~ ^current= ]]; then
+                echo "current=${new_task}" >> "$tmpfile"
+                replaced=1
+            else
+                echo "$line" >> "$tmpfile"
+            fi
+        done < "$config_file"
+        # if [task] was the last section and we never replaced
+        if (( in_task && !replaced )); then
+            echo "current=${new_task}" >> "$tmpfile"
         fi
+        mv "$tmpfile" "$config_file"
     else
         # append [task] section
         {
@@ -811,11 +1125,35 @@ task=finish the auth refactor
 [task]
 current=finish the auth refactor
 
-# --- Messages (optional) -----------------------------------------------------
+# --- Defaults (optional) ------------------------------------------------------
+# Tone and identity settings. These apply to all tones unless overridden.
 
-[messages]
-# tone=default    # normal focus-helper vibes
-tone=puppy        # i know what you are
+[defaults]
+tone=puppy              # comma-separated: puppy,wolf,cat,bunny,fox,robot
+                        # picks randomly per invocation. "default" = no personality
+noun=girl,puppy         # comma-separated, {noun} in messages. per-tone default if unset
+#suppress_warnings=true # silence deprecation and config warnings
+
+# --- Tone overrides (optional) ------------------------------------------------
+# Override or extend built-in tones. bark= lines are additive (add to defaults).
+# Unknown tone names create fully custom tones (only your barks are used).
+
+#[tone "puppy"]
+#noun=puppy,enby        # override default noun for this tone
+#bark=*zooms in circles* NO COMMIT!! FOCUS!!  # added to the built-in barks
+#emoji=🐾
+#task_line=be a good {noun} and work on: {task} 🐶
+#env_label=slip the leash:
+#slip_label=one-time walkies:
+#nuclear_label=...or --no-verify, but that's cheating and you know it
+
+# fully custom tone example:
+#[tone "dragon"]
+#noun=dragon
+#emoji=🐉
+#bark=*breathes fire* no commits, {noun}!!
+#bark=*sits on your keyboard* this is part of the hoard now.
+#task_line=guard your treasure, {noun}: {task}
 
 # --- Override (optional) ------------------------------------------------------
 # Configure escape hatches. Defaults shown below.
@@ -825,7 +1163,7 @@ env_var=UNLEASH
 slip_file=.leash-slip
 # Override methods:
 #   UNLEASH=1 git commit ...     (env var bypass)
-#   touch .leash-slip            (one-time pass, auto-deleted after use)
+#   leash slip / touch .leash-slip  (one-time pass, auto-deleted after use)
 #   git commit --no-verify       (skips all hooks, always works)
 EXAMPLE
 }
