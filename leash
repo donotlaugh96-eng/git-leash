@@ -9,6 +9,11 @@ set -euo pipefail
 
 LEASH_VERSION="0.1.2"
 
+if ((BASH_VERSINFO < 4)); then
+    echo "git-leash requires Bash 4+. Currently running ${BASH_VERSION}"
+    exit 1
+fi
+
 # --- Config Parser -----------------------------------------------------------
 # Parses INI-style config with named sections and multi-value keys.
 # Supports: [schedule "name"], [tone "name"], [defaults], [task], [override]
